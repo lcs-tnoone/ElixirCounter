@@ -35,6 +35,11 @@ struct ContentView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
     
+    // Max allowed spend is current elixir + 2, capped by the largest button (9)
+    private var maxSpend: Int {
+        min(elixir + 2, 9)
+    }
+    
     var body: some View {
         VStack(spacing: 24) {
             Text("Clash Royale Elixir Counter")
@@ -104,9 +109,9 @@ struct ContentView: View {
                     }
                 }
                 
-                // Subtract buttons 1-9
+                // Subtract buttons 1-9 with overdraw protection (allow up to elixir + 2)
                 VStack(spacing: 10) {
-                    Text("Subtract Elixir")
+                    Text("Subtract Elixir (max spend: \(maxSpend))")
                         .font(.headline)
                     let rows = [
                         [1, 2, 3],
@@ -120,7 +125,7 @@ struct ContentView: View {
                                     subtractElixir(value)
                                 }
                                 .buttonStyle(.bordered)
-                                .disabled(elixir == 0)
+                                .disabled(elixir == 0 || value > maxSpend)
                             }
                         }
                     }
@@ -169,7 +174,9 @@ struct ContentView: View {
     
     private func subtractElixir(_ amount: Int) {
         guard amount > 0 else { return }
-        elixir = max(0, elixir - amount)
+        // Enforce the overdraw rule (can spend at most elixir + 2)
+        let allowed = min(amount, elixir + 2)
+        elixir = max(0, elixir - allowed)
     }
     
     // MARK: - Ticker Task
