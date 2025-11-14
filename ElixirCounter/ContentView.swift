@@ -12,27 +12,69 @@ struct ContentView: View {
     @State private var elixir: Int = 5
     private let elixirCap = 10
     
-    // Match timer state (in seconds)
-    @State private var remainingSeconds: Int = 180 // 3 minutes
-    private let doubleElixirThreshold: Int = 60 // when remaining <= 60s
+    // Phases
+    private enum Phase {
+        case regulation    // 3:00 -> 0, 1x to 2x at 1:00
+        case overtime      // 2:00 -> 0, 2x to 3x at 1:00
+    }
+    @State private var phase: Phase = .regulation
+    
+    // Timer state (in seconds)
+    @State private var remainingSeconds: Int = 180 // regulation starts at 3 minutes
     
     // Run control
     @State private var isRunning: Bool = false
     @State private var tickerTask: Task<Void, Never>? = nil
     
     // UI formatting helpers
-    private var isDoubleElixir: Bool {
-        remainingSeconds <= doubleElixirThreshold
+    private var phaseDuration: Int {
+        switch phase {
+        case .regulation: return 180
+        case .overtime: return 120
+        }
+    }
+    
+    private var isAfterFirstMinute: Bool {
+        // For both phases, threshold is 60s remaining
+        remainingSeconds <= 60
+    }
+    
+    private var elixirMultiplier: Double {
+        switch phase {
+        case .regulation:
+            return isAfterFirstMinute ? 2.0 : 1.0
+        case .overtime:
+            return isAfterFirstMinute ? 3.0 : 2.0
+        }
     }
     
     private var currentElixirInterval: TimeInterval {
-        isDoubleElixir ? 1.4 : 2.8
+        // Base 2.8s divided by multiplier
+        2.8 / elixirMultiplier
     }
     
     private var formattedTime: String {
         let minutes = remainingSeconds / 60
         let seconds = remainingSeconds % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+    
+    private var phaseTitle: String {
+        switch phase {
+        case .regulation:
+            return isAfterFirstMinute ? "Double Elixir" : "Single Elixir"
+        case .overtime:
+            return isAfterFirstMinute ? "Triple Elixir (Overtime)" : "Double Elixir (Overtime)"
+        }
+    }
+    
+    private var phaseColor: Color {
+        switch phase {
+        case .regulation:
+            return isAfterFirstMinute ? .purple : .blue
+        case .overtime:
+            return .red
+        }
     }
     
     // Max allowed spend is current elixir + 2, capped by the largest button (9)
@@ -49,12 +91,13 @@ struct ContentView: View {
             // Timer and phase
             VStack(spacing: 8) {
                 Text(formattedTime)
-                    .font(.system(size: 48, weight: .bold, design: .rounded))
+                    .font(.system(size: 56, weight: .bold, design: .rounded))
                     .monospacedDigit()
+                    .foregroundStyle(phase == .overtime ? .red : .primary)
                 
-                Text(isDoubleElixir ? "Double Elixir" : "Single Elixir")
+                Text(phaseTitle)
                     .font(.headline)
-                    .foregroundStyle(isDoubleElixir ? .purple : .secondary)
+                    .foregroundStyle(phaseColor)
             }
             
             // Elixir display
@@ -62,29 +105,29 @@ struct ContentView: View {
                 Text("Elixir")
                     .font(.headline)
                 Text("\(elixir)")
-                    .font(.system(size: 64, weight: .bold, design: .rounded))
+                    .font(.system(size: 72, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(elixir == elixirCap ? .green : .primary)
                 
-                // Simple progress bar to 10
+                // Progress bar to 10
                 GeometryReader { geo in
                     let width = geo.size.width
                     let progress = CGFloat(elixir) / CGFloat(elixirCap)
                     ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: 10)
                             .fill(Color.gray.opacity(0.2))
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(isDoubleElixir ? Color.purple.opacity(0.7) : Color.blue.opacity(0.7))
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(phaseColor.opacity(0.7))
                             .frame(width: width * progress)
                             .animation(.easeInOut(duration: 0.2), value: elixir)
                     }
                 }
-                .frame(height: 16)
+                .frame(height: 18)
             }
             .padding(.horizontal)
             
             // Controls
-            VStack(spacing: 16) {
+            VStack(spacing: 20) {
                 HStack(spacing: 12) {
                     Button(isRunning ? "Reset" : "Start") {
                         if isRunning {
@@ -94,23 +137,26 @@ struct ContentView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                     
                     if isRunning {
                         Button("Pause") {
                             pauseMatch()
                         }
                         .buttonStyle(.bordered)
+                        .controlSize(.large)
                     } else {
                         Button("Resume") {
                             resumeMatch()
                         }
                         .buttonStyle(.bordered)
-                        .disabled(remainingSeconds == 180 && elixir == 5) // nothing to resume if never started
+                        .controlSize(.large)
+                        .disabled(remainingSeconds == 180 && elixir == 5 && phase == .regulation) // nothing to resume if never started
                     }
                 }
                 
                 // Subtract buttons 1-9 with overdraw protection (allow up to elixir + 2)
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                     Text("Subtract Elixir (max spend: \(maxSpend))")
                         .font(.headline)
                     let rows = [
@@ -124,7 +170,11 @@ struct ContentView: View {
                                 Button("-\(value)") {
                                     subtractElixir(value)
                                 }
+                                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 4)
                                 .buttonStyle(.bordered)
+                                .controlSize(.large)
                                 .disabled(elixir == 0 || value > maxSpend)
                             }
                         }
@@ -146,7 +196,8 @@ struct ContentView: View {
     
     private func startMatch() {
         // Reset to known starting state and run
-        elixir = 5
+        elixir = 6
+        phase = .regulation
         remainingSeconds = 180
         isRunning = true
         startTicker()
@@ -156,7 +207,8 @@ struct ContentView: View {
         isRunning = false
         tickerTask?.cancel()
         tickerTask = nil
-        elixir = 5
+        elixir = 6
+        phase = .regulation
         remainingSeconds = 180
     }
     
@@ -190,7 +242,19 @@ struct ContentView: View {
             var elixirAccumulator: TimeInterval = 0
             var matchAccumulator: TimeInterval = 0
             
-            while !Task.isCancelled, isRunning, remainingSeconds > 0 {
+            while !Task.isCancelled, isRunning {
+                guard remainingSeconds > 0 else {
+                    // Transition or stop when this phase ends
+                    handlePhaseCompletion()
+                    // If we transitioned to a new phase and are still running, continue loop
+                    if !isRunning { break }
+                    // Reset timing anchors for next phase
+                    lastUpdate = Date()
+                    elixirAccumulator = 0
+                    matchAccumulator = 0
+                    continue
+                }
+                
                 // Sleep a short time to drive updates
                 try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
                 
@@ -219,11 +283,20 @@ struct ContentView: View {
                     elixirAccumulator = 0
                 }
             }
-            
-            // End of match or cancelled
-            if remainingSeconds <= 0 {
-                isRunning = false
-            }
+        }
+    }
+    
+    @MainActor
+    private func handlePhaseCompletion() {
+        switch phase {
+        case .regulation:
+            // Enter overtime: 2 minutes, keep running, red theme
+            phase = .overtime
+            remainingSeconds = 120
+            // keep isRunning as-is to continue
+        case .overtime:
+            // Match over
+            isRunning = false
         }
     }
 }
